@@ -29,6 +29,7 @@ SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902','/dev/cu.usbmodemF412FA64B66C2']
 SERIAL_BAUD = 115200
 
 # ================== Helpers ==================
+
 def create_grid(n, m): return np.zeros((n, m, 3), dtype=float)
 
 def get_dynamic_tile_size(n, m):

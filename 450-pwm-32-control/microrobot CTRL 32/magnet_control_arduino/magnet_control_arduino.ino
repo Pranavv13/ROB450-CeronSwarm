@@ -37,13 +37,17 @@ void setup() {
 
 
 void loop() {
-  int nToken = 64;    // Expecting 64 integer values in [0, 10] - intensity and polarity of 32 magnets therefore 32 * 2 = 64
-  int nGr = 4;        // 4 groups of 16 channels - groups by each column (4 columns and 8 rows)
+  // Number of tokens in each CSV Line 
+  // 64 because there are 32 magnets each with polarity and magnitude
+  int nToken = 64;    
+
+  // 4 groups of 16 drivers (each group = one PCA9685 Driver)
+  int nGr = 4;        
   
   // control input
   int values[64];     // *** Store parsed integer values as an integer (UNO: 64 × 2 B = 128 B, PICO: 64 × 4 B = 256 B): Control Input
 
-  // STRING -> INT
+  // Read serial input line by line
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');  // Read a line from Serial (line by line) save as a String Object
     line.trim(); // use trim method to trim line by line
@@ -56,9 +60,11 @@ void loop() {
     int count = 0;
 
     // Parse comma-separated integers
+
     while (count < nToken) {
       int commaIdx = line.indexOf(',', startIdx);     // find # of ',' return int (-1 return if false, ++1 return if true)
       String token;
+
       if (commaIdx == -1) {
         token = line.substring(startIdx);  // Last token
       } else {
@@ -75,19 +81,28 @@ void loop() {
     // Send PWM signal to each driver
     for (int g = 0; g < nGr; g++) {
       Adafruit_PWMServoDriver* pwm;
+
+      // Select the PWM Driver based on the group 
       if (g == 0) pwm = &pwm1;        // address of pwm1
       else if (g == 1) pwm = &pwm2;   // address of pwm2
       else if (g == 2) pwm = &pwm3;   // address of pwm3
       else pwm = &pwm4;               // address of pwm4
 
+      // Each driver drives 16 magnets 
       for (int i = 0; i < 16; i++) {
+
+        // index to the correct array to store 
         int idx = g * 16 + i;
+
+        //find the magnitude of PWM 
         int input_val = values[idx];  // Range: [0, 10]
 
         // for safety (optional)
         input_val = constrain(input_val, 0, 10);  // Safety: The constrain(x, a, b) function forces any input to remain within the range [a, b].
 
         int pwm_val = input_val * 409;  // Map 0–10 → 0–4090, PWM 0 - 100 percent
+
+        //Set PWM Output 
         pwm->setPWM(i, 0, pwm_val);
       }
     }
