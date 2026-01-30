@@ -11,11 +11,11 @@ import os
 # ============================================================
 # Camera config (choose ONE supported mode)
 # ============================================================
-DEVICE_INDEX = "0"  # [0] HD USB Camera - TODO: we will use 4 cameras 
+DEVICE_INDEX = "1"  # [0] HD USB Camera - TODO: we will use 4 cameras 
 
 CAM_OPTIONS = {
     "video_size": "1920x1080",
-    "framerate": "60",
+    "framerate": "10",
     "input_format": "mjpeg",
 }
 # CAM_OPTIONS = {"video_size":"1280x720", "framerate":"120", "input_format":"mjpeg"}
@@ -390,7 +390,7 @@ def record_camera(record_path, preview_annot_path, cam_options, show_hough=True)
     if preview_annot_path:
         writer_annot = cv2.VideoWriter(preview_annot_path, fourcc, fps, (w, h))
 
-    container = av.open(f"{DEVICE_INDEX}:none", format="avfoundation", options=cam_options)
+    container = av.open('video=HD USB Camera', format='dshow', options=cam_options)
     stream = container.streams.video[0]
 
     print(f"[Record] Start recording -> {record_path}  ({w}x{h}@{fps})")

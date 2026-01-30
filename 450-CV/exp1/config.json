@@ -1,0 +1,22 @@
+{
+  "camera_options": {
+    "video_size": "1920x1080",
+    "framerate": "10",
+    "input_format": "mjpeg"
+  },
+  "hough_params": {
+    "threshold_value": 80,
+    "R": 3,
+    "Rrange": 1,
+    "mindist_factor": 1.2,
+    "dp": 1.4,
+    "param1": 40,
+    "param2": 12
+  },
+  "tracking_params": {
+    "kalman_max_lost": 60,
+    "track_dist_thre1": 40,
+    "track_dist_thre2": 70,
+    "track_dist_reb": 200
+  }
+}
