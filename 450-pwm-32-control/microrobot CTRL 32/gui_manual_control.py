@@ -8,7 +8,7 @@ import serial
 import time
 
 # ================== Config ==================
-SERIAL_PORT = '/dev/cu.usbmodem1020BA0ABA902'
+SERIAL_PORT = 'COM3'
 DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
 maxIntensity = 10           # maximum intensity of each magnet [0,10]
 # ================== Config ==================
