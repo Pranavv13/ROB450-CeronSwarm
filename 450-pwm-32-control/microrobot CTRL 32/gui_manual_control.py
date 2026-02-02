@@ -9,11 +9,7 @@ import time
 
 # ================== Config ==================
 SERIAL_PORT = 'COM5'
-<<<<<<< HEAD
 SERIAL_PORT= 'COM5'
-=======
-SERIAL_PORT = 'COM3'
->>>>>>> 7264b8c34c36e14ff1ec30c073fe2f9bc5dd27a1
 DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
 maxIntensity = 10           # maximum intensity of each magnet [0,10]
 # ================== Config ==================
@@ -32,7 +28,7 @@ maxIntensity = 10           # maximum intensity of each magnet [0,10]
 
 # === Pygame / UI ===
 SERIAL_BAUD = 115200
-SCREEN_W, SCREEN_H = 800, 550
+SCREEN_W, SCREEN_H = 900, 550
 FPS = 30
 BG_COLOR   = (30, 30, 30)
 GRID_COLOR = (100, 100, 100) # changed from original value of 80, 80, 80
@@ -80,8 +76,13 @@ def draw_grid(grid):
     #screen.fill(BG_COLOR) #disabled to allow stage borders underneath grid data
     for i in range(n):
         for j in range(m):
-            x = x0 + j*tile
-            y = y0 + i*tile
+            if i == 0 or i == 2:
+                x = x0 + (j+0.5)*tile
+                y = y0 + i*tile
+            else:
+                x = x0 + j*tile
+                y = y0 + i*tile
+            
             pos_val, neg_val, _ = grid[i, j]
             if pos_val > 0:
                 alpha = int(np.clip(25.5 * pos_val, 25, 255))
@@ -105,8 +106,12 @@ def draw_stage(grid):
     screen.fill(BG_COLOR)
     for i in range(n):
         for j in range(m):
-            x = x0 + j*tile
-            y = y0 + i*tile
+            if i == 0 or i == 2:
+                x = x0 + (j+0.5)*tile
+                y = y0 + i*tile
+            else:
+                x = x0 + j*tile
+                y = y0 + i*tile
             pos_val, neg_val, _ = grid[i, j]
             if pos_val > 0:
                 alpha = int(np.clip(25.5 * pos_val, 25, 255))
@@ -212,8 +217,11 @@ while running:
             # map mouse to cell and TOGGLE it (latched/permanent ON until clicked again)
             x0, pos_y, grid_w, tile, y0 = draw_grid(grid_data)  # get geometry
             mx, my = pygame.mouse.get_pos()
-            j = (mx - x0) // tile
             i = (my - y0) // tile
+            if i == 0 or i == 2:
+                j = int(mx - x0 - 0.5*tile) // tile
+            else:
+                j = (mx - x0) // tile
 
             if 0 <= i < n and 0 <= j < m:
                 pos_val, neg_val, t0 = grid_stage[i, j]
