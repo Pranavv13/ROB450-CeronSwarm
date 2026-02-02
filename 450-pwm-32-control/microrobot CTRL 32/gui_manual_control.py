@@ -35,7 +35,7 @@ SERIAL_BAUD = 115200
 SCREEN_W, SCREEN_H = 800, 550
 FPS = 30
 BG_COLOR   = (30, 30, 30)
-GRID_COLOR = (80, 80, 80)
+GRID_COLOR = (100, 100, 100) # changed from original value of 80, 80, 80
 POS_COLOR  = (255, 0, 0)  # positive (shown when grid[i,j,0] > 0)
 NEG_COLOR  = (0, 0, 255)  # negative (shown when grid[i,j,1] > 0)
 TEXT_COLOR = (255, 255, 255)
@@ -50,6 +50,7 @@ def create_grid(n, m):
     return np.zeros((n, m, 3), dtype=float)
 
 grid_data = create_grid(n, m)
+grid_stage = create_grid(n, m)
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
@@ -72,6 +73,31 @@ def get_dynamic_tile_size(n, m):
 
 # this is to show grid (control input in UI)
 def draw_grid(grid):
+    tile = get_dynamic_tile_size(n, m)
+    grid_w, grid_h = m*tile, n*tile
+    x0 = (SCREEN_W - grid_w)//2
+    y0 = 20
+    #screen.fill(BG_COLOR) #disabled to allow stage borders underneath grid data
+    for i in range(n):
+        for j in range(m):
+            x = x0 + j*tile
+            y = y0 + i*tile
+            pos_val, neg_val, _ = grid[i, j]
+            if pos_val > 0:
+                alpha = int(np.clip(25.5 * pos_val, 25, 255))
+                surf = pygame.Surface((tile-8, tile-8), pygame.SRCALPHA)
+                surf.fill((*POS_COLOR, alpha))
+                screen.blit(surf, (x+3, y+3))
+            elif neg_val > 0:
+                alpha = int(np.clip(25.5 * neg_val, 25, 255))
+                surf = pygame.Surface((tile-8, tile-8), pygame.SRCALPHA)
+                surf.fill((*NEG_COLOR, alpha))
+                screen.blit(surf, (x+3, y+3))
+            else:
+                pygame.draw.rect(screen, GRID_COLOR, (x+3, y+3, tile-8, tile-8))
+    return x0, y0 + grid_h, grid_w, tile, y0
+
+def draw_stage(grid):
     tile = get_dynamic_tile_size(n, m)
     grid_w, grid_h = m*tile, n*tile
     x0 = (SCREEN_W - grid_w)//2
@@ -190,28 +216,33 @@ while running:
             i = (my - y0) // tile
 
             if 0 <= i < n and 0 <= j < m:
-                pos_val, neg_val, t0 = grid_data[i, j]
+                pos_val, neg_val, t0 = grid_stage[i, j]
 
                 if event.button == 1:  # left click => NEG toggle
                     if neg_val > 0:
                         # turn OFF
-                        grid_data[i, j] = [0, 0, 0]
+                        grid_stage[i, j] = [0, 0, 0]
                     else:
                         # turn NEG ON permanently (t_start = 0 means "latched" / no decay)
-                        grid_data[i, j] = [0, maxIntensity, 0]
+                        grid_stage[i, j] = [0, maxIntensity, 0]
 
                 elif event.button == 3:  # right click => POS toggle
                     if pos_val > 0:
                         # turn OFF
-                        grid_data[i, j] = [0, 0, 0]
+                        grid_stage[i, j] = [0, 0, 0]
                     else:
                         # turn POS ON permanently
-                        grid_data[i, j] = [maxIntensity, 0, 0]
+                        grid_stage[i, j] = [maxIntensity, 0, 0]
+
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                grid_data = grid_stage.copy()
 
     # Keep this call if you want any non-latched cells (t_start > 0) to still decay.
     # Latched cells use t_start == 0 and won't decay because update_decay checks t0 > 0.
     update_decay(grid_data)
 
+    draw_stage(grid_stage)
     x0, pos_y, grid_w, _, _ = draw_grid(grid_data)
     draw_table(grid_data, x0, pos_y, grid_w)
 
