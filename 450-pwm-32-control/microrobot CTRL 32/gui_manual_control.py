@@ -8,6 +8,7 @@ import serial
 import time
 
 # ================== Config ==================
+SERIAL_PORT = 'COM5'
 <<<<<<< HEAD
 SERIAL_PORT= 'COM5'
 =======
@@ -176,27 +177,45 @@ running = True
 
 while running:
     now = time.time()
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            # map mouse to cell and set impulse (L: neg=10, R: pos=10) strength: [0,100]
-            # you can tunne maximum from the top
+            # map mouse to cell and TOGGLE it (latched/permanent ON until clicked again)
             x0, pos_y, grid_w, tile, y0 = draw_grid(grid_data)  # get geometry
             mx, my = pygame.mouse.get_pos()
             j = (mx - x0) // tile
             i = (my - y0) // tile
-            if 0 <= i < n and 0 <= j < m:
-                if event.button == 1:   # left click => negative
-                    grid_data[i, j] = [0, maxIntensity, time.time()]
-                elif event.button == 3: # right click => positive
-                    grid_data[i, j] = [maxIntensity, 0, time.time()]
 
+            if 0 <= i < n and 0 <= j < m:
+                pos_val, neg_val, t0 = grid_data[i, j]
+
+                if event.button == 1:  # left click => NEG toggle
+                    if neg_val > 0:
+                        # turn OFF
+                        grid_data[i, j] = [0, 0, 0]
+                    else:
+                        # turn NEG ON permanently (t_start = 0 means "latched" / no decay)
+                        grid_data[i, j] = [0, maxIntensity, 0]
+
+                elif event.button == 3:  # right click => POS toggle
+                    if pos_val > 0:
+                        # turn OFF
+                        grid_data[i, j] = [0, 0, 0]
+                    else:
+                        # turn POS ON permanently
+                        grid_data[i, j] = [maxIntensity, 0, 0]
+
+    # Keep this call if you want any non-latched cells (t_start > 0) to still decay.
+    # Latched cells use t_start == 0 and won't decay because update_decay checks t0 > 0.
     update_decay(grid_data)
+
     x0, pos_y, grid_w, _, _ = draw_grid(grid_data)
     draw_table(grid_data, x0, pos_y, grid_w)
 
-    # build & show CSV (for 4x8 always valid)
+    # build & show CSV
     A = get_output_matrix(grid_data)
     csv_output_str = matrix_to_csv_string(A)
     # draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
@@ -209,15 +228,16 @@ while running:
         # read echo or MCU response if any
         if ser.in_waiting:
             try:
-                line = ser.readline().decode('utf-8', errors='ignore').strip()
+                line = ser.readline().decode("utf-8", errors="ignore").strip()
                 if line:
                     csv_input_str = line
             except Exception:
                 pass
 
-    #if csv_input_str:
-        #draw_text(screen, "CSV input =", (x0, pos_y + n*28 + 10 + 220), center=False, size=22, color=(150,220,255))
-        #draw_text(screen, csv_input_str[:120], (x0 + 120, pos_y + n*28 + 10 + 220), center=False, size=18, color=(200,220,255))
+    # if csv_input_str:
+    #     draw_text(screen, "CSV input =", (x0, pos_y + n*28 + 10 + 220), center=False, size=22, color=(150,220,255))
+    #     draw_text(screen, csv_input_str[:120], (x0 + 120, pos_y + n*28 + 10 + 220), center=False, size=18, color=(200,220,255))
+
     pygame.display.flip()
     clock.tick(FPS)
 
