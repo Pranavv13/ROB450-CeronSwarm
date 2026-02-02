@@ -1,7 +1,7 @@
 {
   "camera_options": {
     "video_size": "1920x1080",
-    "framerate": "10",
+    "framerate": "60",
     "input_format": "mjpeg"
   },
   "hough_params": {
