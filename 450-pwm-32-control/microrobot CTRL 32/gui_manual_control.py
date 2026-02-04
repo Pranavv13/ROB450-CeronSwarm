@@ -8,10 +8,10 @@ import serial
 import time
 
 # ================== Config ==================
-
-SERIAL_PORT = '/dev/cu.usbmodem1020BA0ABA902'
+SERIAL_PORT = 'COM5'
 DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
 maxIntensity = 10           # maximum intensity of each magnet [0,10]
+frequency = 2
 # ================== Config ==================
 
 
@@ -27,7 +27,7 @@ maxIntensity = 10           # maximum intensity of each magnet [0,10]
 
 # === Pygame / UI ===
 SERIAL_BAUD = 115200
-SCREEN_W, SCREEN_H = 900, 550
+SCREEN_W, SCREEN_H = 800, 550
 FPS = 30
 BG_COLOR   = (30, 30, 30)
 GRID_COLOR = (100, 100, 100) # changed from original value of 80, 80, 80
@@ -40,7 +40,7 @@ TABLE_GRID = (70, 70, 70)
 mouseButtonHeld = False
 color = [-1, -1, -1]
 stageBorderWidth = 3 # width of border "highlight" to show which commands are staged
-undoDepth = 10 #how many stages get saved for undos: MUST BE >= 0
+undoDepth = 3 #how many stages get saved for undos: MUST BE >= 0
 displayStage = 0 #which stage to display
 
 # === Grid fixed ===
@@ -53,6 +53,7 @@ def create_grid(n, m):
 grid_data = create_grid(n, m) #represents the data currently active on the magnet array
 grid_stage = create_grid(n, m) #holds the current "stage" as seen in the gui
 grid_empty = create_grid(n, m) #empty grid
+grid_prev = create_grid(n, m) #previous grid state
 # holds the current grid_data in position 0, and previous grids in other spots
 undoStates = np.zeros((undoDepth+1, n, m, 3), dtype=float)
 
@@ -303,7 +304,9 @@ while running:
     # draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
 
     # send @10Hz
-    if ser and (now - last_sent) >= 0.1:
+    #if ser and (now - last_sent) >= 1/frequency:
+    if ser and (not np.array_equal(grid_data, grid_prev)):
+        grid_prev = grid_data.copy()
         send_matrix_over_serial(A, ser)
         last_sent = now
 
