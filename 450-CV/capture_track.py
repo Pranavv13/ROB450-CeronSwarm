@@ -163,6 +163,8 @@ print(f"[INFO] Config saved to: {config_path}")
 # ROI Implementation
 # ============================================================
 
+# ROI - Region of Interest --> Limits search to a specific region 
+
 ROI_FILE = "roi.json"
 ROI = None
 
@@ -316,7 +318,7 @@ class MultiTracker:
 def detect_circles(frame_bgr, hough_params, roi=None):
     R, Rrange, mindist_factor, dp, param1, param2 = hough_params
 
-
+    # Converts original image (frame_bgr) to gray scale 
     gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
     
     # TODO 
@@ -324,27 +326,31 @@ def detect_circles(frame_bgr, hough_params, roi=None):
     #have lookup table
     #gamma transformation through cv.LUT() 
 
-
+    # Creates an empty black image with same shape as origional 
     binary = np.zeros_like(gray, dtype=np.uint8)
 
-    if roi is None:
+    # No Specific Region --> Process entire image
+    if roi is None: 
         _, binary = cv2.threshold(
+            # threshold every pixel
             gray, threshold_value, 255, cv2.THRESH_BINARY_INV
         )
     else:
         x0, y0, rw, rh = roi
 
+        # Clamps image bounds to the ROI
         h, w = gray.shape
         x0 = max(0, min(x0, w-1))
         y0 = max(0, min(y0, h-1))
         rw = max(1, min(rw, w - x0))
         rh = max(1, min(rh, h - y0))
-
+ 
         roi_gray = gray[y0:y0+rh, x0:x0+rw]
         _, roi_bin = cv2.threshold(
             roi_gray, threshold_value, 255, cv2.THRESH_BINARY_INV
         )
 
+        # Insert ROI Back into the full black binary image 
         binary[y0:y0+rh, x0:x0+rw] = roi_bin
 
     # TODO don't use circle
@@ -353,6 +359,7 @@ def detect_circles(frame_bgr, hough_params, roi=None):
     # Each component can be treated as one robot if its pixel count exceeds a threshold.
     # Object position is estimated using the component centroid (mean of pixel coordinates).
 
+    # Detects Circles in the Binary Image 
     circles = cv2.HoughCircles(
         binary,
         cv2.HOUGH_GRADIENT,
@@ -364,13 +371,18 @@ def detect_circles(frame_bgr, hough_params, roi=None):
         maxRadius=R + Rrange
     )
 
+    # Empty List to Store Detected Circles 
     dets = []
+
     if circles is not None:
         circles = np.uint16(np.around(circles[0]))
         for (x, y, r) in circles:
             area = float(np.pi * r * r)
             dets.append((float(x), float(y), area, int(r)))
+            # Here we have x,y for every circle 
 
+    # Dets --> List of detected circles
+    # Binary --> Thresholded Image
     return dets, binary
 
 
@@ -407,12 +419,20 @@ def record_camera(record_path, preview_annot_path, cam_options, show_hough=True)
                 time.sleep(0.002)
                 continue
 
+            # Video Frame to Array 
             img = frame.to_ndarray(format="bgr24")
             writer_raw.write(img)
 
             vis = img
             if show_hough:
+                # Detect circles
                 dets, binary = detect_circles(img, hough_params, roi = ROI)
+                # ************************************************************
+                # Here is where for live video we would use dets to determine
+                # the current positions of all microrobots 
+                # ************************************************************
+
+
                 vis = img.copy()
                 #    cv2.circle(vis, (int(x), int(y)), r, (0,255,0), 2)
                 #    cv2.circle(vis, (int(x), int(y)), 2, (0,0,255), -1)
@@ -427,6 +447,7 @@ def record_camera(record_path, preview_annot_path, cam_options, show_hough=True)
             if key in (27, ord('q')):
                 break
 
+            # Next frame 
             frame_count += 1
             if frame_count % 120 == 0:
                 dt = time.time() - t0
