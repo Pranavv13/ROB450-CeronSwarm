@@ -54,7 +54,11 @@ void loop() {
     digitalWrite(LED_BUILTIN, HIGH);
 
     // *** Print the received CSV string to the Serial Monitor: TO VALIDATE COMMUNICATION
+<<<<<<< HEAD
     //Serial.println(line); // to commnication results from 
+=======
+    // Serial.println(line); // to commnication results from 
+>>>>>>> e947e2e16af7a857fa9e21784b51d0d6604d42e8
 
 
     int startIdx = 0;
