@@ -11,23 +11,23 @@ import time
 SERIAL_PORT = 'COM5'
 DECAY_DURATION = 0.1        # decaying time: how long do you want to turn magnet on?
 maxIntensity = 10           # maximum intensity of each magnet [0,10]
+frequency = 2
 # ================== Config ==================
 
 
-
-
-
-
-
-
-
-
+# ================= CONTROLS =================
+# left click: stage block in/out of positive polarity
+# right click: stage block in/out of negative polarity
+#       -drag mouse to select multiple cells
+# space: sends full staged command to magnets
+# a: stages all magnets to be turned off
+# arrow keys: cycle between current and past grids to be staged (undo button)
 
 
 
 # === Pygame / UI ===
 SERIAL_BAUD = 115200
-SCREEN_W, SCREEN_H = 900, 550
+SCREEN_W, SCREEN_H = 800, 550
 FPS = 30
 BG_COLOR   = (30, 30, 30)
 GRID_COLOR = (100, 100, 100) # changed from original value of 80, 80, 80
@@ -37,6 +37,12 @@ TEXT_COLOR = (255, 255, 255)
 TABLE_BG   = (15, 15, 15)
 TABLE_GRID = (70, 70, 70)
 
+mouseButtonHeld = False
+color = [-1, -1, -1]
+stageBorderWidth = 3 # width of border "highlight" to show which commands are staged
+undoDepth = 3 #how many stages get saved for undos: MUST BE >= 0
+displayStage = 0 #which stage to display
+
 # === Grid fixed ===
 n, m = 4, 8  # rows=4, cols=8 (fixed)
 
@@ -44,8 +50,12 @@ def create_grid(n, m):
     # channels: [pos_val (0..10), neg_val (0..10), t_start]
     return np.zeros((n, m, 3), dtype=float)
 
-grid_data = create_grid(n, m)
-grid_stage = create_grid(n, m)
+grid_data = create_grid(n, m) #represents the data currently active on the magnet array
+grid_stage = create_grid(n, m) #holds the current "stage" as seen in the gui
+grid_empty = create_grid(n, m) #empty grid
+grid_prev = create_grid(n, m) #previous grid state
+# holds the current grid_data in position 0, and previous grids in other spots
+undoStates = np.zeros((undoDepth+1, n, m, 3), dtype=float)
 
 pygame.init()
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
@@ -75,26 +85,25 @@ def draw_grid(grid):
     #screen.fill(BG_COLOR) #disabled to allow stage borders underneath grid data
     for i in range(n):
         for j in range(m):
-            if i == 0 or i == 2:
+            if i % 2 == 0: #accounts for left-right offset of even rows
                 x = x0 + (j+0.5)*tile
-                y = y0 + i*tile
             else:
                 x = x0 + j*tile
-                y = y0 + i*tile
+            y = y0 + i*tile
             
             pos_val, neg_val, _ = grid[i, j]
             if pos_val > 0:
                 alpha = int(np.clip(25.5 * pos_val, 25, 255))
-                surf = pygame.Surface((tile-8, tile-8), pygame.SRCALPHA)
+                surf = pygame.Surface((tile-2-2*stageBorderWidth, tile-2-2*stageBorderWidth), pygame.SRCALPHA)
                 surf.fill((*POS_COLOR, alpha))
-                screen.blit(surf, (x+3, y+3))
+                screen.blit(surf, (x+stageBorderWidth, y+stageBorderWidth))
             elif neg_val > 0:
                 alpha = int(np.clip(25.5 * neg_val, 25, 255))
-                surf = pygame.Surface((tile-8, tile-8), pygame.SRCALPHA)
+                surf = pygame.Surface((tile-2-2*stageBorderWidth, tile-2-2*stageBorderWidth), pygame.SRCALPHA)
                 surf.fill((*NEG_COLOR, alpha))
-                screen.blit(surf, (x+3, y+3))
+                screen.blit(surf, (x+stageBorderWidth, y+stageBorderWidth))
             else:
-                pygame.draw.rect(screen, GRID_COLOR, (x+3, y+3, tile-8, tile-8))
+                pygame.draw.rect(screen, GRID_COLOR, (x+stageBorderWidth, y+stageBorderWidth, tile-2-2*stageBorderWidth, tile-2-2*stageBorderWidth))
     return x0, y0 + grid_h, grid_w, tile, y0
 
 def draw_stage(grid):
@@ -105,12 +114,11 @@ def draw_stage(grid):
     screen.fill(BG_COLOR)
     for i in range(n):
         for j in range(m):
-            if i == 0 or i == 2:
+            if i % 2 == 0: #offset for even rows
                 x = x0 + (j+0.5)*tile
-                y = y0 + i*tile
             else:
                 x = x0 + j*tile
-                y = y0 + i*tile
+            y = y0 + i*tile
             pos_val, neg_val, _ = grid[i, j]
             if pos_val > 0:
                 alpha = int(np.clip(25.5 * pos_val, 25, 255))
@@ -125,6 +133,12 @@ def draw_stage(grid):
             else:
                 pygame.draw.rect(screen, GRID_COLOR, (x, y, tile-2, tile-2))
     return x0, y0 + grid_h, grid_w, tile, y0
+
+#shifts stages whenever a new command is sent, discards the oldest command
+def shift_stages(stage):
+    for i in range(undoDepth):
+        undoStates[undoDepth - i] = undoStates[undoDepth - i - 1].copy()
+    undoStates[0] = stage.copy()
 
 def update_decay(grid):
     now = time.time()
@@ -212,7 +226,14 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-        elif event.type == pygame.MOUSEBUTTONDOWN:
+        elif event.type == pygame.MOUSEBUTTONDOWN and mouseButtonHeld == False:
+            mouseButtonHeld = True
+            button = event.button
+        elif event.type == pygame.MOUSEBUTTONUP:
+            color = [-1, -1, -1]
+            mouseButtonHeld = False
+
+        if mouseButtonHeld == True:
             # map mouse to cell and TOGGLE it (latched/permanent ON until clicked again)
             x0, pos_y, grid_w, tile, y0 = draw_grid(grid_data)  # get geometry
             mx, my = pygame.mouse.get_pos()
@@ -225,31 +246,55 @@ while running:
             if 0 <= i < n and 0 <= j < m:
                 pos_val, neg_val, t0 = grid_stage[i, j]
 
-                if event.button == 1:  # left click => NEG toggle
-                    if neg_val > 0:
-                        # turn OFF
-                        grid_stage[i, j] = [0, 0, 0]
+                if color == [-1, -1, -1]:
+                    if button == 1 and neg_val <= 0:
+                        color = [0, maxIntensity, 0]
+                    elif button == 3 and pos_val <= 0:
+                        color = [maxIntensity, 0, 0]
                     else:
-                        # turn NEG ON permanently (t_start = 0 means "latched" / no decay)
-                        grid_stage[i, j] = [0, maxIntensity, 0]
+                        color = [0, 0, 0]
 
-                elif event.button == 3:  # right click => POS toggle
-                    if pos_val > 0:
-                        # turn OFF
-                        grid_stage[i, j] = [0, 0, 0]
-                    else:
-                        # turn POS ON permanently
-                        grid_stage[i, j] = [maxIntensity, 0, 0]
+                grid_stage[i, j] = color
+
+                # if button == 1:  # left click => NEG toggle
+                #     if neg_val > 0:
+                #         # turn OFF
+                #         grid_stage[i, j] = [0, 0, 0]
+                #     else:
+                #         # turn NEG ON permanently (t_start = 0 means "latched" / no decay)
+                #         grid_stage[i, j] = [0, maxIntensity, 0]
+
+                # elif button == 3:  # right click => POS toggle
+                #     if pos_val > 0:
+                #         # turn OFF
+                #         grid_stage[i, j] = [0, 0, 0]
+                #     else:
+                #         # turn POS ON permanently
+                #         grid_stage[i, j] = [maxIntensity, 0, 0]
 
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 grid_data = grid_stage.copy()
+                shift_stages(grid_data.copy())
+                displayStage = 0
+            #clear current grid
+            elif event.key == pygame.K_a:
+                grid_stage = grid_empty.copy()
+            #cycle from current grid layout to past grids
+            elif event.key == pygame.K_RIGHT and displayStage < undoDepth:
+                displayStage += 1
+                grid_stage = undoStates[displayStage].copy()
+            elif event.key == pygame.K_LEFT and displayStage > 0:
+                displayStage -= 1
+                grid_stage = undoStates[displayStage].copy()
+
+
 
     # Keep this call if you want any non-latched cells (t_start > 0) to still decay.
     # Latched cells use t_start == 0 and won't decay because update_decay checks t0 > 0.
     update_decay(grid_data)
 
-    draw_stage(grid_stage)
+    draw_stage(grid_stage.copy())
     x0, pos_y, grid_w, _, _ = draw_grid(grid_data)
     draw_table(grid_data, x0, pos_y, grid_w)
 
@@ -259,7 +304,9 @@ while running:
     # draw_csv_string(csv_output_str, x0, pos_y + n*28 + 10, grid_w, label="CSV output =")
 
     # send @10Hz
-    if ser and (now - last_sent) >= 0.1:
+    #if ser and (now - last_sent) >= 1/frequency:
+    if ser and (not np.array_equal(grid_data, grid_prev)):
+        grid_prev = grid_data.copy()
         send_matrix_over_serial(A, ser)
         last_sent = now
 

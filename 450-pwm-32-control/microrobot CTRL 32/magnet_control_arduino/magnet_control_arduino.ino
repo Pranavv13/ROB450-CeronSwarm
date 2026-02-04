@@ -23,6 +23,7 @@ Adafruit_PWMServoDriver pwm4(0x78);
 
 void setup() {
   Serial.begin(115200);  // Start serial communication
+  pinMode(LED_BUILTIN, OUTPUT);
 
   // Initialize all PWM drivers
   pwm1.begin();
@@ -43,13 +44,17 @@ void loop() {
   // control input
   int values[64];     // *** Store parsed integer values as an integer (UNO: 64 × 2 B = 128 B, PICO: 64 × 4 B = 256 B): Control Input
 
+  digitalWrite(LED_BUILTIN, LOW);
+
   // STRING -> INT
   if (Serial.available()) {
     String line = Serial.readStringUntil('\n');  // Read a line from Serial (line by line) save as a String Object
     line.trim(); // use trim method to trim line by line
 
+    digitalWrite(LED_BUILTIN, HIGH);
+
     // *** Print the received CSV string to the Serial Monitor: TO VALIDATE COMMUNICATION
-    Serial.println(line); // to commnication results from 
+    //Serial.println(line); // to commnication results from 
 
 
     int startIdx = 0;
