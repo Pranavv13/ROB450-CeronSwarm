@@ -49,7 +49,7 @@ void loop() {
     line.trim(); // use trim method to trim line by line
 
     // *** Print the received CSV string to the Serial Monitor: TO VALIDATE COMMUNICATION
-    Serial.println(line); // to commnication results from 
+    // Serial.println(line); // to commnication results from 
 
 
     int startIdx = 0;
