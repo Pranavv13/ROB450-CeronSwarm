@@ -11,7 +11,7 @@ import os
 # ============================================================
 # Camera config (choose ONE supported mode)
 # ============================================================
-DEVICE_INDEX = "0"  # [0] HD USB Camera - TODO: we will use 4 cameras 
+DEVICE_INDEX = "1"  # [1] HD USB Camera - TODO: we will use 4 cameras 
 
 CAM_OPTIONS = {
     "video_size": "1920x1080",
