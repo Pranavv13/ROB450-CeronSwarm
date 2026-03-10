@@ -1,33 +1,35 @@
 from google import genai
-import os
+import os, re, json
+import text_parsing
 
 # Initialize the client
 # api = os.getenv("GEMINI_API_KEY")
 
-client = genai.Client(api_key = "YOUR API KEYT")
-    # http_options=types.HttpOptions(api_version="v1")
-#)
+def send_command(parameters):
+    client = genai.Client(api_key = "AIzaSyDDcjJnD5W8OEu9N1vx178kKzMlHCDQyH0")
+    
+    prompt = "Generate a 8x8 matrix of 1s and 0s \
+          representing a " + parameters + ". " \
+    "0s are background and 1s are the" + parameters + ". " \
+    "Nothing else just the matrix." \
+    "Ignore any size, movement, or direction requests. Just make the shape"
 
-shape = "circle"
-prompt = "Generate a 8x8 matrix of 1s and 0s representing a " + shape + ". " \
-"0s are background and 1s are the" + shape + ". " \
-"Nothing else just the matrix."
-try:
-    print("Sending request...")
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview", 
-        contents=[prompt]
-    )
-    print(f"{response.text}")
+    print(f"Parsed params: {json.dumps(params, indent=2)}")
+
+    try:
+        print("Sending request to Gemini")
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview", 
+            contents=[prompt]
+        )
+        print(f"{response.text}")
     
 
-except Exception as e:
-    print(f"Connection failed: {e}")
+    except Exception as e:
+        print(f"Connection failed: {e}")
 
-# TO DO 
-# Read shape from user prompt to terminal not Python script 
-# Export reponse.text (the matrix) to a CSV File 
-# Multiple prompts in one script 
-
-# Later TO DO 
-# Sizes and movement/velocity 
+# --- Main loop ---
+while True:
+    user_input = input("Enter command: ").strip()
+    params = text_parsing.parse_command(user_input)
+    send_command(user_input)
