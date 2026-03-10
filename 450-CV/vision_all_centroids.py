@@ -3,7 +3,6 @@
 # --------------------------------------
 
 import cv2
-import imutils
 
 print("initializing camera")
 cam = cv2.VideoCapture(2) # Open the z30 camera (for my computer, 0 is front camera, 1 is back camera)

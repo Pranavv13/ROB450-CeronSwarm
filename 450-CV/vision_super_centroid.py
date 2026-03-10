@@ -41,18 +41,39 @@ while True:
 
     if centroids:
         points = np.array(centroids, dtype=np.int32)
-        # Find convex hull
+        # find convex hull of the centroids (the smallest convex shape that can enclose all the centroids)
         hull = cv2.convexHull(points)
-        # Draw the hull (outline)
+        # draw the outline (hull)
         cv2.polylines(frame, [hull], isClosed=True, color=(0,255,0), thickness=2)
 
 
         # find the mean "super-centroid"
         avg_cX = int(sum([c[0] for c in centroids]) / len(centroids))
         avg_cY = int(sum([c[1] for c in centroids]) / len(centroids))
+        super_centroid = np.array([avg_cX, avg_cY])
+
         cv2.circle(frame, (avg_cX, avg_cY), 10, (0, 0, 255), -1)
         cv2.putText(frame, "super-centroid", (avg_cX - 50, avg_cY - 20), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        
+        # find distances from outer centroids to super-centroid
+        distances = np.linalg.norm(points-super_centroid, axis=1)
+        mean_dist = np.mean(distances)
+        std_dist = np.std(distances)
+
+        # define outlier distance threshold (adjust 2.5)
+        outlier_thresh = mean_dist + 2.5 * std_dist
+
+        # identify outliers
+        for i, (cX, cY) in enumerate(points):
+            d = distances[i]
+
+            if d > outlier_thresh:
+                # draw outlier in blue
+                cv2.circle(frame, (cX, cY), 8, (255, 0, 0), -1)
+                cv2.putText(frame, "OUTLIER", (cX-20,cY-15), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, (255, 0, 0), 2)
+
 
     out.write(frame) # saves to video file
     cv2.imshow("Frame", frame) # shows live video feed
