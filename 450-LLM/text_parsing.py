@@ -1,7 +1,6 @@
 # Takes the user command and extracts useful parameters
 
-import re, json
-
+import re
 def parse_command(text):
     text_lower = text.lower()
     params = {
@@ -49,12 +48,3 @@ def parse_command(text):
 
     return params
 
-
-# --- Main loop ---
-while True:
-    user_input = input("\nEnter command (or 'quit'): ").strip()
-    if user_input.lower() == "quit":
-        break
-
-    params = parse_command(user_input)
-    print(f"Parsed params: {json.dumps(params, indent=2)}")
