@@ -6,7 +6,7 @@ import text_parsing
 # api = os.getenv("GEMINI_API_KEY")
 
 def send_command(user_prompt, parameters):
-    client = genai.Client(api_key = "AIzaSyDDcjJnD5W8OEu9N1vx178kKzMlHCDQyH0")
+    client = genai.Client(api_key = "API Key")
     
     gemini_prompt = ("For the following command, generated an " \
     "8x8 matrix of 1s and 0s representing the shape listed." \
@@ -63,3 +63,5 @@ user_input = input("Enter command: ").strip()
 params = text_parsing.parse_command(user_input)
 send_command(user_input, params)
 
+# TO Do 
+# Multiple Prompts (Loop)
