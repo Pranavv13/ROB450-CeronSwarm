@@ -6,7 +6,7 @@ import text_parsing
 # api = os.getenv("GEMINI_API_KEY")
 
 def send_command(parameters):
-    client = genai.Client(api_key = "AIzaSyDDcjJnD5W8OEu9N1vx178kKzMlHCDQyH0")
+    client = genai.Client(api_key = "API Key")
     
     prompt = "Generate a 8x8 matrix of 1s and 0s \
           representing a " + parameters + ". " \
