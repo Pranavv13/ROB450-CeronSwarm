@@ -6,7 +6,7 @@ def parse_command(text):
     text_lower = text.lower()
     params = {
         "size": None,       # in mm
-        "movement": None,
+        "motion": None,
         "speed": None,
         "direction": None
     }
@@ -19,11 +19,11 @@ def parse_command(text):
         unit_to_mm = {"mm": 1, "cm": 10, "m": 1000, "px": 0.264583}
         params["size"] = value * unit_to_mm[unit]
 
-    # --- Movement ---
-    movements = ["move", "translate", "rotate", "spin", "scale", "shift", "shrink", "expand", "grow"]
-    for m in movements:
+    # --- Motion ---
+    motions = ["move", "translate", "rotate", "spin", "scale", "shift", "shrink", "expand", "grow"]
+    for m in motions:
         if m in text_lower:
-            params["movement"] = m
+            params["motion"] = m
             break
 
     # --- Speed ---
