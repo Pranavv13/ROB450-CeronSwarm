@@ -4,6 +4,8 @@ import numpy as np
 import time
 import serial
 from collections import deque
+from openpyxl import Workbook
+import csv
 
 # ================== Config ==================
 SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
@@ -18,7 +20,7 @@ SERIAL_BAUD = 115200
 
 SCREEN_W, SCREEN_H = 800, 650
 FPS = 30
-N_ROWS, N_COLS = 4, 8
+N_ROWS, N_COLS = 16, 16
 
 BG_COLOR       = (30, 30, 30)
 GRID_COLOR     = (100, 100, 100)
@@ -33,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="API Key")
+client = genai.Client(api_key="AIzaSyDD5uhPK2LT0fZciOFoMGxLozYTfdY-ZZE")
 
 def get_shape_cells(shape):
     prompt = (
@@ -228,6 +230,11 @@ def main(cells, D, target_mask, shape):
     clock = pygame.time.Clock()
 
     grid = create_grid(N_ROWS, N_COLS)
+    wb = Workbook()
+    wb.remove(wb.active)  # remove default sheet
+
+    frame_log = []
+    frame_idx = 0
 
     btn_w, btn_h = 160, 48
     start_rect = pygame.Rect(0, 0, btn_w, btn_h)
@@ -298,6 +305,21 @@ def main(cells, D, target_mask, shape):
                 A = get_output_matrix(grid)
                 send_matrix_over_serial(A, ser)
                 last_send = now
+                # Save to Frame Sheet
+
+                binary_grid = ((grid[:, :, 0] > 0) | (grid[:, :, 1] > 0)).astype(int) * 7
+                #for i in range(N_ROWS):
+                 #   for j in range(N_COLS):
+                  #      pos_val = int(round(grid[i, j][0]))
+                   #     neg_val = int(round(grid[i, j][1]))
+
+                    #    ws.cell(row=i+1, column=j+1, value=f"{pos_val}/{neg_val}")
+
+                ws = wb.create_sheet(title=f"frame_{frame_idx}")
+                for i in range(N_ROWS):
+                    for j in range(N_COLS):
+                        ws.cell(row=i+1, column=j+1, value=binary_grid[i, j])
+                frame_idx += 1
 
         screen.fill(BG_COLOR)
         draw_text(screen, f"Shape: {shape} | dir={direction} (-1: pos/blue, 1: neg/red) | state: {state}", (20, 8), size=22, color=(200, 220, 200))
@@ -318,6 +340,17 @@ def main(cells, D, target_mask, shape):
             ser.close()
         except Exception:
             pass
+
+    # Save CSV
+    excel_filename = f"{shape.replace(' ', '_')}_frames.xlsx"
+
+    try:
+        wb.save(excel_filename)
+        print(f"Saved frames to {excel_filename}")
+
+    except Exception as e:
+        print(f"Failed to save CSV: {e}")
+
     pygame.quit()
 
 
