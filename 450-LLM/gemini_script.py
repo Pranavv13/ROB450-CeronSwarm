@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyDD5uhPK2LT0fZciOFoMGxLozYTfdY-ZZE")
+client = genai.Client(api_key="API Key")
 
 def get_shape_cells(shape):
     prompt = (
@@ -308,12 +308,6 @@ def main(cells, D, target_mask, shape):
                 # Save to Frame Sheet
 
                 binary_grid = ((grid[:, :, 0] > 0) | (grid[:, :, 1] > 0)).astype(int) * 7
-                #for i in range(N_ROWS):
-                 #   for j in range(N_COLS):
-                  #      pos_val = int(round(grid[i, j][0]))
-                   #     neg_val = int(round(grid[i, j][1]))
-
-                    #    ws.cell(row=i+1, column=j+1, value=f"{pos_val}/{neg_val}")
 
                 ws = wb.create_sheet(title=f"frame_{frame_idx}")
                 for i in range(N_ROWS):
