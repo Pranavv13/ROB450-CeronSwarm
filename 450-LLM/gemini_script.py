@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="API Key")
+client = genai.Client(api_key="AIzaSyBdkDPsayQq0eq_og_90UnGodcJ-6S7kbs")
 
 def get_shape_cells(shape):
     prompt = (
@@ -309,10 +309,14 @@ def main(cells, D, target_mask, shape):
 
                 binary_grid = ((grid[:, :, 0] > 0) | (grid[:, :, 1] > 0)).astype(int) * 7
 
+                # Embed 16x16 working grid into bottom-left of a 32x32 output grid
+                full_grid = np.zeros((32, 32), dtype=int)
+                full_grid[16:32, 0:16] = binary_grid
+
                 ws = wb.create_sheet(title=f"frame_{frame_idx}")
-                for i in range(N_ROWS):
-                    for j in range(N_COLS):
-                        ws.cell(row=i+1, column=j+1, value=binary_grid[i, j])
+                for i in range(32):
+                    for j in range(32):
+                        ws.cell(row=i+1, column=j+1, value=full_grid[i, j])
                 frame_idx += 1
 
         screen.fill(BG_COLOR)
