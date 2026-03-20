@@ -4,8 +4,8 @@ import numpy as np
 import time
 import serial
 from collections import deque
-from openpyxl import Workbook
 import csv
+import os
 
 # ================== Config ==================
 SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyBdkDPsayQq0eq_og_90UnGodcJ-6S7kbs")
+client = genai.Client(api_key="API KEY")
 
 def get_shape_cells(shape):
     prompt = (
@@ -230,10 +230,10 @@ def main(cells, D, target_mask, shape):
     clock = pygame.time.Clock()
 
     grid = create_grid(N_ROWS, N_COLS)
-    wb = Workbook()
-    wb.remove(wb.active)  # remove default sheet
 
-    frame_log = []
+    csv_folder = f"{shape.replace(' ', '_')}_frames"
+    os.makedirs(csv_folder, exist_ok=True)
+
     frame_idx = 0
 
     btn_w, btn_h = 160, 48
@@ -313,10 +313,10 @@ def main(cells, D, target_mask, shape):
                 full_grid = np.zeros((32, 32), dtype=int)
                 full_grid[16:32, 0:16] = binary_grid
 
-                ws = wb.create_sheet(title=f"frame_{frame_idx}")
-                for i in range(32):
-                    for j in range(32):
-                        ws.cell(row=i+1, column=j+1, value=full_grid[i, j])
+                csv_path = os.path.join(csv_folder, f"frame_{frame_idx:04d}.csv")
+                with open(csv_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(full_grid.tolist())
                 frame_idx += 1
 
         screen.fill(BG_COLOR)
@@ -339,15 +339,7 @@ def main(cells, D, target_mask, shape):
         except Exception:
             pass
 
-    # Save CSV
-    excel_filename = f"{shape.replace(' ', '_')}_frames.xlsx"
-
-    try:
-        wb.save(excel_filename)
-        print(f"Saved frames to {excel_filename}")
-
-    except Exception as e:
-        print(f"Failed to save CSV: {e}")
+    print(f"Saved {frame_idx} frames to folder: {csv_folder}")
 
     pygame.quit()
 
