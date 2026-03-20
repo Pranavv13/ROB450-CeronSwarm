@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="API KEY")
+client = genai.Client(api_key="AIzaSyAy8fUFGHsX-CB3LMJONovR_SpG_J5a-0c")
 
 def get_shape_cells(shape):
     prompt = (
@@ -311,7 +311,7 @@ def main(cells, D, target_mask, shape):
 
                 # Embed 16x16 working grid into bottom-left of a 32x32 output grid
                 full_grid = np.zeros((32, 32), dtype=int)
-                full_grid[16:32, 0:16] = binary_grid
+                full_grid[0:16, 0:16] = binary_grid
 
                 csv_path = os.path.join(csv_folder, f"frame_{frame_idx:04d}.csv")
                 with open(csv_path, 'w', newline='') as f:
