@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyBd5FcVttxq_3ciHMV7C3Z2qHdjG5kD_KM")
+client = genai.Client(api_key="API Key")
 
 def get_shape_cells(shape):
     prompt = (
