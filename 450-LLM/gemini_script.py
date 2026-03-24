@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="API Key ")
+client = genai.Client(api_key="AIzaSyBd5FcVttxq_3ciHMV7C3Z2qHdjG5kD_KM")
 
 def get_shape_cells(shape):
     prompt = (
@@ -231,6 +231,11 @@ def main(cells, D, target_mask, shape):
 
     grid = create_grid(N_ROWS, N_COLS)
 
+    csv_folder = f"{shape.replace(' ', '_')}_frames"
+    os.makedirs(csv_folder, exist_ok=True)
+
+    frame_idx = 0
+
     btn_w, btn_h = 160, 48
     start_rect = pygame.Rect(0, 0, btn_w, btn_h)
     start_rect.center = (SCREEN_W // 2 - 100, SCREEN_H - 40)
@@ -300,6 +305,19 @@ def main(cells, D, target_mask, shape):
                 A = get_output_matrix(grid)
                 send_matrix_over_serial(A, ser)
                 last_send = now
+                # Save to Frame Sheet
+
+                binary_grid = ((grid[:, :, 0] > 0) | (grid[:, :, 1] > 0)).astype(int) * 7
+
+                # Embed 16x16 working grid into bottom-left of a 32x32 output grid
+                full_grid = np.zeros((32, 32), dtype=int)
+                full_grid[0:16, 0:16] = binary_grid
+
+                csv_path = os.path.join(csv_folder, f"frame_{frame_idx:04d}.csv")
+                with open(csv_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerows(full_grid.tolist())
+                frame_idx += 1
 
         screen.fill(BG_COLOR)
         draw_text(screen, f"Shape: {shape} | dir={direction} (-1: pos/blue, 1: neg/red) | state: {state}", (20, 8), size=22, color=(200, 220, 200))
@@ -320,6 +338,9 @@ def main(cells, D, target_mask, shape):
             ser.close()
         except Exception:
             pass
+
+    print(f"Saved {frame_idx} frames to folder: {csv_folder}")
+
     pygame.quit()
 
 
