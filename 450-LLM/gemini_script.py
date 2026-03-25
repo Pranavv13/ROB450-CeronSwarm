@@ -236,6 +236,11 @@ def main(cells, D, target_mask, shape):
 
     frame_idx = 0
 
+    csv_folder = f"{shape.replace(' ', '_')}_frames"
+    os.makedirs(csv_folder, exist_ok=True)
+
+    frame_idx = 0
+
     btn_w, btn_h = 160, 48
     start_rect = pygame.Rect(0, 0, btn_w, btn_h)
     start_rect.center = (SCREEN_W // 2 - 100, SCREEN_H - 40)
