@@ -40,7 +40,7 @@ client = genai.Client(api_key="API Key")
 def get_shape_cells(shape):
     prompt = (
         f"Generate a {N_ROWS}x{N_COLS} matrix of 1s and 0s representing a {shape}. "
-        f"0s are background and 1s are the {shape}. "
+        f"0s are background and 1s are the {shape}."
         f"Output only the matrix, one row per line, values separated by spaces. Nothing else."
     )
     print("Sending request to Gemini...")
