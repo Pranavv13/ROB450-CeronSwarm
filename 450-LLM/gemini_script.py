@@ -35,7 +35,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyDPIwGAq7enONhYkafrDJ-nbjAOQ8ElQW0")
+client = genai.Client(api_key="API Key")
 
 def get_shape_cells(shape):
     prompt = (
@@ -236,11 +236,6 @@ def main(cells, D, target_mask, shape):
 
     frame_idx = 0
 
-    csv_folder = f"{shape.replace(' ', '_')}_frames"
-    os.makedirs(csv_folder, exist_ok=True)
-
-    frame_idx = 0
-
     btn_w, btn_h = 160, 48
     start_rect = pygame.Rect(0, 0, btn_w, btn_h)
     start_rect.center = (SCREEN_W // 2 - 100, SCREEN_H - 40)
@@ -313,6 +308,9 @@ def main(cells, D, target_mask, shape):
                 # Save to Frame Sheet
 
                 binary_grid = ((grid[:, :, 0] > 0) | (grid[:, :, 1] > 0)).astype(int) * 7
+
+                # Rotate 90 degrees clockwise to correct display orientation
+                binary_grid = np.rot90(binary_grid, k=-1)
 
                 # Embed 16x16 working grid into bottom-left of a 32x32 output grid
                 full_grid = np.zeros((32, 32), dtype=int)
