@@ -217,6 +217,7 @@ input::-webkit-inner-spin-button { -webkit-appearance: none; }
       <div class="tab active" id="tab-manual" onclick="switchTab('manual')">Manual</div>
       <div class="tab"        id="tab-csv"    onclick="switchTab('csv')">CSV Player</div>
       <div class="tab"        id="tab-hex"    onclick="switchTab('hex')">Hex Mover</div>
+      <div class="tab"        id="tab-ai"     onclick="switchTab('ai')">AI Shape</div>
     </div>
 
     <!-- MANUAL -->
@@ -320,6 +321,58 @@ input::-webkit-inner-spin-button { -webkit-appearance: none; }
         WASD keys work when no input is focused.<br>
         Max Amp limit applies automatically.
       </div>
+    </div>
+
+    <!-- AI SHAPE -->
+    <div class="box tab-pane" id="pane-ai" style="border-top:none">
+      <div class="box-title">AI Shape Generator (Gemini)</div>
+      <div class="row">
+        <span style="color:var(--text-muted);font-size:12px;white-space:nowrap">API Key</span>
+        <input type="password" id="ai-key" placeholder="Gemini API key" style="flex:1;min-width:0">
+      </div>
+      <div class="row">
+        <input type="text" id="ai-shape" placeholder="e.g. small square in the middle" style="flex:1;min-width:0"
+               onkeydown="if(event.key==='Enter')aiGenerate()">
+        <button class="btn" onclick="aiGenerate()">Generate</button>
+      </div>
+
+      <hr class="sep">
+      <div class="box-title" style="margin-bottom:4px">Prompt Template
+        <span style="color:var(--text-muted);font-weight:normal;text-transform:none;letter-spacing:0;font-size:10px">
+          — {shape} and {N} are substituted at runtime
+        </span>
+      </div>
+      <textarea id="ai-prompt-tpl"
+        style="width:100%;height:72px;background:var(--bg-input);border:1px solid var(--border-btn);
+               color:var(--text);padding:5px;font-family:inherit;font-size:11px;resize:vertical;outline:none"
+        onfocus="this._focused=true" onblur="this._focused=false"
+      >Generate a {N}x{N} matrix of 1s and 0s representing a {shape}. 0s are background and 1s are the {shape}. Output only the matrix, one row per line, values separated by spaces. Nothing else.</textarea>
+      <div class="row" style="margin-top:2px">
+        <button class="btn" style="font-size:10px;padding:2px 8px" onclick="aiResetPrompt()">Reset</button>
+      </div>
+
+      <hr class="sep">
+      <div class="box-title" style="margin-bottom:4px">Herd Config</div>
+      <div class="sg" style="gap:4px 10px">
+        <span class="sg-k">Polarity</span>
+        <span><button class="btn" id="btn-ai-pole" onclick="aiTogglePole()"
+          style="border-color:#cc3030;color:#cc3030;font-size:11px;padding:2px 8px">N Pole (+)</button></span>
+        <span class="sg-k">Grid</span>
+        <span><select id="ai-grid" style="background:var(--bg-input);border:1px solid var(--border-btn);color:var(--text);padding:2px 5px;font-family:inherit;font-size:11px">
+          <option value="16">16×16</option>
+          <option value="32">32×32</option>
+        </select></span>
+        <span class="sg-k">Overlap</span>
+        <span><button class="btn on" id="btn-ai-overlap" onclick="aiToggleOverlap()"
+          style="font-size:11px;padding:2px 8px">ON</button></span>
+        <span class="sg-k">Pulse dt (s)</span>
+        <span><input type="number" id="ai-pulse-dt" value="1.0" min="0.05" step="0.05"
+          style="width:60px;font-size:11px"></span>
+      </div>
+
+      <hr class="sep">
+      <div id="ai-status" style="font-size:11px;color:var(--text-muted)">READY — enter a shape and hit Generate</div>
+      <div id="ai-preview" style="margin-top:8px;font-family:monospace;font-size:8px;line-height:1.2;white-space:pre;color:var(--accent2)"></div>
     </div>
 
   </div>
@@ -923,10 +976,9 @@ function updateHexDisplay() {
 window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (!['w','a','s','d'].includes(k)) return;
-  // If an input is focused, blur it so WASD takes over
-  if (document.activeElement && document.activeElement.tagName === 'INPUT') {
-    document.activeElement.blur();
-  }
+  // If any text control is focused, let the keypress go to it
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   e.preventDefault();
   if      (k === 'w') moveHex(-1,  0);
   else if (k === 's') moveHex(+1,  0);
@@ -1203,7 +1255,200 @@ window.addEventListener('load', () => {
   termLog('[MANUAL] Left-click = NEG (S, –7)   Right-click = POS (N, +7)', 'def');
   termLog('[MANUAL] Drag to paint continuously', 'def');
   termLog('[CSV]    Drop CSV files then Play', 'def');
+  termLog('[AI]     AI Shape tab: type a shape, hit Generate', 'def');
+  // Restore saved API key
+  const savedKey = localStorage.getItem('gemini-api-key');
+  if (savedKey) document.getElementById('ai-key').value = savedKey;
 });
+
+// ─────────────────────────────────────────────────
+//  AI SHAPE GENERATOR
+// ─────────────────────────────────────────────────
+const AI_DEFAULT_PROMPT =
+  'Generate a {N}x{N} matrix of 1s and 0s representing a {shape}. ' +
+  '0s are background and 1s are the {shape}. ' +
+  'Output only the matrix, one row per line, values separated by spaces. Nothing else.';
+
+let aiPoleSign  = 7;     // +7 = N pole (red), -7 = S pole (blue)
+let aiOverlap   = true;  // HERD_OVERLAP — inner band stays on during pulse
+
+function aiTogglePole() {
+  aiPoleSign = -aiPoleSign;
+  const btn = document.getElementById('btn-ai-pole');
+  if (aiPoleSign > 0) {
+    btn.textContent = 'N Pole (+)';
+    btn.style.borderColor = '#cc3030';
+    btn.style.color       = '#cc3030';
+  } else {
+    btn.textContent = 'S Pole (−)';
+    btn.style.borderColor = '#3068cc';
+    btn.style.color       = '#3068cc';
+  }
+}
+
+function aiToggleOverlap() {
+  aiOverlap = !aiOverlap;
+  const btn = document.getElementById('btn-ai-overlap');
+  btn.textContent = aiOverlap ? 'ON' : 'OFF';
+  btn.classList.toggle('on', aiOverlap);
+}
+
+function aiResetPrompt() {
+  document.getElementById('ai-prompt-tpl').value = AI_DEFAULT_PROMPT;
+}
+
+async function aiGenerate() {
+  const apiKey   = document.getElementById('ai-key').value.trim();
+  const shape    = document.getElementById('ai-shape').value.trim();
+  const gridSize = parseInt(document.getElementById('ai-grid').value) || 16;
+  const statusEl = document.getElementById('ai-status');
+  const previewEl= document.getElementById('ai-preview');
+
+  if (!apiKey) { termLog('[AI] No API key provided', 'err'); return; }
+  if (!shape)  { termLog('[AI] No shape specified', 'warn'); return; }
+
+  // Persist key
+  localStorage.setItem('gemini-api-key', apiKey);
+
+  statusEl.style.color = 'var(--accent)';
+  statusEl.textContent = 'Calling Gemini API…';
+  previewEl.textContent = '';
+  termLog(`[AI] Requesting "${shape}" (${gridSize}×${gridSize})…`, 'info');
+
+  const pole = aiPoleSign;  // snapshot at generate time
+
+  try {
+    // ── 1. Call Gemini ──────────────────────────────────────────────
+    const tpl   = document.getElementById('ai-prompt-tpl').value || AI_DEFAULT_PROMPT;
+    const prompt = tpl.replaceAll('{shape}', shape).replaceAll('{N}', String(gridSize));
+
+    const resp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      }
+    );
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+    }
+    const data = await resp.json();
+    const geminiText = data.candidates[0].content.parts[0].text;
+    termLog(`[AI] Gemini responded (${geminiText.split('\n').length} lines)`, 'ok');
+
+    // ── 2. Parse matrix ─────────────────────────────────────────────
+    const N = gridSize;
+    const targetMask = new Uint8Array(N * N);  // 1 = active cell
+    const lines = geminiText.trim().split('\n');
+    let parsedRows = 0;
+    for (let r = 0; r < lines.length && r < N; r++) {
+      const vals = lines[r].trim().split(/\s+/);
+      for (let c = 0; c < vals.length && c < N; c++) {
+        if (vals[c].replace(/[\[\](),]/g, '') === '1') {
+          targetMask[r * N + c] = 1;
+        }
+      }
+      parsedRows++;
+    }
+    const activeCells = targetMask.reduce((s, v) => s + v, 0);
+    if (!activeCells) throw new Error('No active cells parsed — check the Gemini response in the terminal');
+    termLog(`[AI] Parsed ${activeCells} active cells from ${parsedRows} rows`, 'ok');
+
+    // ── 3. Distance transform (BFS Manhattan) ──────────────────────
+    const D = new Int32Array(N * N).fill(999999);
+    const queue = [];
+    for (let i = 0; i < N * N; i++) {
+      if (targetMask[i]) { D[i] = 0; queue.push(i); }
+    }
+    let head = 0;
+    while (head < queue.length) {
+      const idx = queue[head++];
+      const r = Math.floor(idx / N), c = idx % N;
+      const d = D[idx];
+      for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nr = r+dr, nc = c+dc;
+        if (nr >= 0 && nr < N && nc >= 0 && nc < N) {
+          const ni = nr*N+nc;
+          if (D[ni] > d+1) { D[ni] = d+1; queue.push(ni); }
+        }
+      }
+    }
+    const Dmax = D.reduce((a, b) => Math.max(a, b), 0);
+    termLog(`[AI] Distance map: Dmax=${Dmax}`, 'info');
+
+    // ── 4. Generate frames ──────────────────────────────────────────
+    // One frame per band (Dmax → 0), plus one final target-only frame.
+    const overlap  = aiOverlap;
+    const pulseDt  = Math.max(0.05, parseFloat(document.getElementById('ai-pulse-dt').value) || 1.0);
+    const frames   = [];
+
+    for (let k = Dmax; k >= 0; k--) {
+      const work = new Uint8Array(N * N);
+      for (let i = 0; i < N * N; i++) {
+        if (D[i] === k) work[i] = 1;
+        if (overlap && k > 0 && D[i] === k - 1) work[i] = 1;  // HERD_OVERLAP: inner band stays on
+      }
+      frames.push(aiWorkGridToFrame(work, N, pole));
+    }
+    // Final: target only
+    const finalWork = new Uint8Array(N * N);
+    for (let i = 0; i < N * N; i++) finalWork[i] = targetMask[i];
+    frames.push(aiWorkGridToFrame(finalWork, N, pole));
+
+    // ── 5. Load into CSV player ────────────────────────────────────
+    // Apply pulse dt as the per-frame hold time (HERD_PULSE_DT)
+    csvHoldS = pulseDt;
+    document.getElementById('hold-disp').textContent = csvHoldS.toFixed(3);
+    csvFrames = frames; csvFrameIdx = 0; csvPlaying = false;
+    csvSent = 0; csvSeq = 0; csvLastSentIdx = -1; csvLastError = '';
+    csvLastStatus = `AI: ${frames.length} frames`;
+    document.getElementById('btn-play').textContent = 'Play';
+    document.getElementById('btn-play').classList.remove('on');
+    document.getElementById('csv-file-info').textContent =
+      `AI "${shape}" — ${frames.length} frames (${N}×${N} grid)`;
+    updateCsvStats();
+
+    // ── 6. Preview ─────────────────────────────────────────────────
+    const preview = [];
+    for (let r = 0; r < N; r++) {
+      let row = '';
+      for (let c = 0; c < N; c++) row += targetMask[r*N+c] ? '█' : '·';
+      preview.push(row);
+    }
+    previewEl.textContent = preview.join('\n');
+
+    statusEl.style.color = 'var(--ok)';
+    statusEl.textContent = `OK — ${frames.length} frames loaded. Switch to CSV Player to play.`;
+    termLog(`[AI] ${frames.length} frames loaded into CSV Player`, 'ok');
+
+    // Switch to CSV tab so the user can immediately hit Play
+    switchTab('csv');
+
+  } catch(e) {
+    statusEl.style.color = 'var(--err)';
+    statusEl.textContent = `ERROR: ${e.message}`;
+    termLog(`[AI] Error: ${e.message}`, 'err');
+  }
+}
+
+// Convert a flat N×N working grid (Uint8Array, 0/1) into a magnetData frame
+// (Int8Array, 1024), replicating the Python: rot90(k=-1) + embed in 32×32.
+function aiWorkGridToFrame(workGrid, N, pole) {
+  // numpy rot90(k=-1) = 90° clockwise: result[r][c] = source[N-1-c][r]
+  // Embed result into full_grid[0:N, 0:N] of a 32×32 grid, flatten row-major.
+  const frame = new Int8Array(1024);
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      // rotated[r][c] = workGrid[(N-1-c)*N + r]
+      if (workGrid[(N - 1 - c) * N + r]) {
+        frame[r * 32 + c] = pole;
+      }
+    }
+  }
+  return frame;
+}
 
 window.addEventListener('resize', initCanvas);
 </script>
