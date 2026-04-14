@@ -6,6 +6,12 @@ import serial
 from collections import deque
 import csv
 import os
+import re
+import sys
+
+# Allow importing text_parsing from the same directory
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from text_parsing import parse_command
 
 # ================== Config ==================
 SERIAL_PORTS = ['/dev/cu.usbmodem1020BA0ABA902']
@@ -35,12 +41,50 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyAKv51WxQ8g2CB4VU-6YPkX0edjPsF3VBc")
+client = genai.Client(api_key="AIzaSyCFOELT8QDnnbaUYledJMZLJ2ZCtFzTHfg")
 
-def get_shape_cells(shape):
+_OPPOSITE_EDGE = {
+    "right":    "left",
+    "left":     "right",
+    "up":       "bottom",
+    "forward":  "bottom",
+    "down":     "top",
+    "backward": "top",
+}
+
+def get_shape_cells(shape, for_movement=None):
+    """
+    Ask Gemini for a binary shape bitmap.
+
+    The shape is always small (4-6 cells wide) so movement is visible on the grid.
+    - for_movement=None  → place the shape centered in the grid.
+    - for_movement=<dir> → place the shape near the opposite edge so it has
+                           room to travel; offset_cells_to_start enforces this
+                           afterwards as a hard guarantee.
+    """
+    if for_movement:
+        edge = _OPPOSITE_EDGE.get(for_movement, "left")
+        placement = (
+            f"positioned near the {edge} edge of the grid, "
+            f"leaving most of the grid empty for movement"
+        )
+    else:
+        placement = "centered in the grid"
+
+    # If the shape is a single letter (e.g. "e") or "letter X", default to
+    # the uppercase version unless the user explicitly said "lowercase".
+    shape_label = shape
+    single = re.fullmatch(r'[a-zA-Z]', shape)
+    letter_word = re.fullmatch(r'letter\s+([a-zA-Z])', shape, re.IGNORECASE)
+    if single or letter_word:
+        letter = (letter_word.group(1) if letter_word else shape).upper()
+        shape_label = f"uppercase letter {letter}"
+
     prompt = (
-        f"Generate a {N_ROWS}x{N_COLS} matrix of 1s and 0s representing a {shape}. "
-        f"0s are background and 1s are the {shape}. "
+        f"Generate a {N_ROWS}x{N_COLS} matrix of 1s and 0s representing a small, "
+        f"compact {shape_label} {placement}. "
+        f"The shape must be approximately 4 to 6 cells wide — do NOT fill the whole grid. "
+        f"0s are background and 1s are the {shape_label}. "
         f"Output only the matrix, one row per line, values separated by spaces. Nothing else."
     )
     print("Sending request to Gemini...")
@@ -222,8 +266,172 @@ def activate_targets_only(grid, target_mask, direction):
 # ================== Distance transform ==================
 
 
+# ================== Movement ==================
+# Direction strings come from text_parsing.parse_command()["direction"].
+# Grid coordinates: row 0 is top, so "up" decrements the row index.
+_DIRECTION_VECTORS = {
+    "up":               (-1,  0),
+    "forward":          (-1,  0),
+    "down":             ( 1,  0),
+    "backward":         ( 1,  0),
+    "left":             ( 0, -1),
+    "right":            ( 0,  1),
+}
+
+def direction_to_vector(direction_str):
+    """Return a (dr, dc) unit grid vector for a direction string from text_parsing."""
+    return _DIRECTION_VECTORS.get(direction_str, (0, 0))
+
+
+def is_movement_command(params):
+    """Return True when text_parsing params describe a swarm translation command."""
+    motion_words = {"move", "translate", "shift"}
+    return (
+        params.get("motion") in motion_words
+        and params.get("direction") in _DIRECTION_VECTORS
+    )
+
+
+def shift_target_mask(target_mask, dr, dc):
+    """
+    Shift every True cell in target_mask by (dr, dc).
+    Cells that would land outside the grid are discarded so the
+    shape simply stops moving when it reaches a boundary.
+    Returns the new mask (same shape as input).
+    """
+    n, m = target_mask.shape
+    new_mask = np.zeros((n, m), dtype=bool)
+    rows, cols = np.where(target_mask)
+    for r, c in zip(rows, cols):
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < n and 0 <= nc < m:
+            new_mask[nr, nc] = True
+    return new_mask
+
+
+def steps_to_far_edge(mask, move_vec, n_rows, n_cols, end_margin=2):
+    """
+    Return the number of single-cell steps needed to bring the shape's
+    leading edge to `end_margin` cells from the far grid boundary.
+
+      right  (dc=+1): travel until max_col  == n_cols-1-end_margin
+      left   (dc=-1): travel until min_col  == end_margin
+      down   (dr=+1): travel until max_row  == n_rows-1-end_margin
+      up     (dr=-1): travel until min_row  == end_margin
+    """
+    dr, dc = move_vec
+    rows, cols = np.where(mask)
+    if not rows.size:
+        return 0
+    if dc == 1:
+        steps = (n_cols - 1 - end_margin) - int(cols.max())
+    elif dc == -1:
+        steps = int(cols.min()) - end_margin
+    elif dr == 1:
+        steps = (n_rows - 1 - end_margin) - int(rows.max())
+    elif dr == -1:
+        steps = int(rows.min()) - end_margin
+    else:
+        steps = 0
+    return max(0, steps)
+
+
+def offset_cells_to_start(cells, direction, n_rows, n_cols, margin=1):
+    """
+    Translate the cell list so the shape starts near the edge *opposite* to
+    the direction of travel, leaving `margin` empty cells at that edge.
+
+      direction right   → left edge   (min col  = margin)
+      direction left    → right edge  (max col  = n_cols-1-margin)
+      direction up/fwd  → bottom edge (max row  = n_rows-1-margin)
+      direction down/bk → top edge    (min row  = margin)
+
+    Cells that would fall outside the grid after translation are dropped.
+    """
+    if not cells:
+        return cells
+
+    rows = [r for r, c in cells]
+    cols = [c for r, c in cells]
+
+    dr, dc = 0, 0
+    if direction == "right":
+        dc = margin - min(cols)
+    elif direction == "left":
+        dc = (n_cols - 1 - margin) - max(cols)
+    elif direction in ("up", "forward"):
+        dr = (n_rows - 1 - margin) - max(rows)
+    elif direction in ("down", "backward"):
+        dr = margin - min(rows)
+
+    return [
+        (r + dr, c + dc)
+        for r, c in cells
+        if 0 <= r + dr < n_rows and 0 <= c + dc < n_cols
+    ]
+
+
+def move_swarm(grid, target_mask, move_vec, num_steps, step_delay, ser):
+    """
+    Hold the swarm in its current shape and translate it one grid cell at a
+    time in move_vec = (dr, dc).
+
+    For each step:
+      1. Compute the shifted target mask.
+      2. Run a mini-herd (distance-transform bands) toward the new positions
+         so the robots follow the advancing magnetic pattern.
+      3. Activate only the new target cells to lock the shape in place.
+      4. Pause for step_delay seconds before the next step.
+
+    Parameters
+    ----------
+    grid        : ndarray  current PWM grid
+    target_mask : ndarray  boolean mask of the formed shape
+    move_vec    : (dr, dc) unit step direction
+    num_steps   : int      how many grid cells to travel
+    step_delay  : float    seconds to hold each intermediate position
+    ser         : serial   serial port (may be None)
+
+    Returns
+    -------
+    Updated target_mask after all steps completed.
+    """
+    dr, dc = move_vec
+    current_mask = target_mask.copy()
+
+    for step in range(num_steps):
+        next_mask = shift_target_mask(current_mask, dr, dc)
+
+        # If the entire shape has moved off-grid, stop early.
+        if not np.any(next_mask):
+            print(f"[move_swarm] Swarm reached grid boundary at step {step}. Stopping.")
+            break
+
+        # Mini-herd: sweep distance-transform bands from outermost inward
+        # so the magnetic wave pulls robots into the new position.
+        D_next = manhattan_distance_to_targets(N_ROWS, N_COLS, next_mask)
+        Dmax_next = int(D_next.max())
+        for k in range(Dmax_next, -1, -1):
+            activate_band_with_overlap(grid, D_next, k, direction)
+            A = get_output_matrix(grid)
+            send_matrix_over_serial(A, ser)
+            time.sleep(HERD_PULSE_DT)
+
+        # Lock the shape at its new position.
+        activate_targets_only(grid, next_mask, direction)
+        A = get_output_matrix(grid)
+        send_matrix_over_serial(A, ser)
+        time.sleep(step_delay)
+
+        current_mask = next_mask
+        print(f"[move_swarm] Step {step + 1}/{num_steps} complete.")
+
+    return current_mask
+# ================== Movement ==================
+
+
 # ================== Main ==================
-def main(cells, D, target_mask, shape):
+def main(cells, D, target_mask, shape, move_params=None):
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     pygame.display.set_caption(f"Swarm Control - {shape}")
@@ -252,6 +460,32 @@ def main(cells, D, target_mask, shape):
     band_k = None
     band_last_t = 0.0
     overlap_until = 0.0
+
+    # Non-blocking move sub-state (driven frame-by-frame in the main loop)
+    move_step_idx     = 0      # steps completed so far
+    move_current_mask = None   # shape mask at the current resting position
+    move_last_step_t  = 0.0    # wall-clock time of the last step
+
+    # Resolve movement parameters from text_parsing output (if provided).
+    move_vec = (0, 0)
+    move_steps = 0
+    move_step_delay = 1.0
+    if move_params is not None and is_movement_command(move_params):
+        move_vec = direction_to_vector(move_params["direction"])
+        # Derive number of steps from speed: slow->1 step, fast->5, default->3
+        spd = move_params.get("speed") or 10  # __main__ always sets a default
+        if spd <= 5:
+            move_steps = 1
+        elif spd <= 15:
+            move_steps = 3
+        elif spd < 50:
+            move_steps = 5
+        else:
+            move_steps = 8
+        # Pause between steps: 10/speed gives 2.0 s at slow, 1.0 s at default, 0.2 s at fast
+        move_step_delay = max(0.2, 10.0 / spd)
+        print(f"[main] Movement queued: direction={move_params['direction']} "
+              f"vec={move_vec} steps={move_steps} delay={move_step_delay:.2f}s")
 
     while running:
         for event in pygame.event.get():
@@ -300,6 +534,38 @@ def main(cells, D, target_mask, shape):
 
             elif state == "form":
                 activate_targets_only(grid, target_mask, direction)
+                # Once the shape is formed, kick off any queued movement.
+                if move_steps > 0:
+                    move_step_idx     = 0
+                    move_current_mask = target_mask.copy()
+                    move_last_step_t  = now  # first step fires after one delay
+                    # Override step count: travel exactly to 2 cells from far edge
+                    move_steps = steps_to_far_edge(
+                        target_mask, move_vec, N_ROWS, N_COLS, end_margin=2
+                    )
+                    print(f"[move] Steps to edge: {move_steps}")
+                    if move_steps > 0:
+                        state = "move"
+
+            elif state == "move":
+                # Each step: shift every active cell one position in move_vec,
+                # then deactivate the cells that were left behind.
+                if (now - move_last_step_t) >= move_step_delay:
+                    move_last_step_t = now
+                    next_mask = shift_target_mask(move_current_mask, move_vec[0], move_vec[1])
+                    if not np.any(next_mask):
+                        print("[move] Boundary reached. Stopping.")
+                        move_steps = 0
+                        state = "form"
+                    else:
+                        activate_targets_only(grid, next_mask, direction)
+                        move_current_mask = next_mask
+                        target_mask       = next_mask   # keep in sync for CSV
+                        move_step_idx    += 1
+                        print(f"[move] Step {move_step_idx}/{move_steps} complete.")
+                        if move_step_idx >= move_steps:
+                            move_steps = 0
+                            state = "form"
 
             if (now - last_send) >= 0.5:
                 A = get_output_matrix(grid)
@@ -323,7 +589,13 @@ def main(cells, D, target_mask, shape):
                 frame_idx += 1
 
         screen.fill(BG_COLOR)
-        draw_text(screen, f"Shape: {shape} | dir={direction} (-1: pos/blue, 1: neg/red) | state: {state}", (20, 8), size=22, color=(200, 220, 200))
+        if state == "move" and move_params:
+            move_info = f" | {move_params['direction']} step {move_step_idx + 1}/{move_steps}"
+        elif move_params and is_movement_command(move_params) and move_steps == 0 and move_step_idx > 0:
+            move_info = f" | {move_params['direction']} done ({move_step_idx} steps)"
+        else:
+            move_info = ""
+        draw_text(screen, f"Shape: {shape} | dir={direction} | state: {state}{move_info}", (20, 8), size=22, color=(200, 220, 200))
         x0, bot_y, grid_w, tile, _ = draw_grid(screen, grid)
         draw_table(screen, grid, x0, bot_y, grid_w)
 
@@ -348,15 +620,49 @@ def main(cells, D, target_mask, shape):
 
 
 if __name__ == "__main__":
-    shape = input("Enter shape name: ").strip()
+    # Single unified command: "make a circle and move it to the right"
+    # or just a shape: "triangle"
+    user_input = input("Enter command: ").strip()
+
+    params = parse_command(user_input)
+
+    # --- Shape name ---
+    shape = params.get("shape")
+    if not shape:
+        shape = input("Shape not detected. Enter shape name: ").strip()
+
+    # --- Movement params ---
+    # Apply defaults: speed=None → 10 mm/s (3 steps, 0.5 s hold)
+    if params.get("speed") is None:
+        params["speed"] = 10
+
+    move_params = params if is_movement_command(params) else None
+
+    if move_params:
+        print(f"Shape: {shape} | direction: {move_params['direction']} | "
+              f"speed: {move_params['speed']} mm/s | motion: {move_params['motion']}")
+    else:
+        print(f"Shape: {shape} | no movement command — converge only")
+
     try:
-        cells = get_shape_cells(shape)
+        cells = get_shape_cells(
+            shape,
+            for_movement=move_params["direction"] if move_params else None
+        )
         if not cells:
             print("No cells parsed from Gemini response. Check the output above.")
         else:
-            print(f"Parsed {len(cells)} target cells: {cells}")
+            # Hard-enforce starting position via offset in case Gemini didn't
+            # follow the placement instruction precisely.
+            if move_params:
+                cells = offset_cells_to_start(
+                    cells, move_params["direction"], N_ROWS, N_COLS
+                )
+                print(f"Offset to starting edge. {len(cells)} cells after clipping.")
+
+            print(f"Parsed {len(cells)} target cells.")
             target_mask = build_target_mask(N_ROWS, N_COLS, cells)
             D = manhattan_distance_to_targets(N_ROWS, N_COLS, target_mask)
-            main(cells, D, target_mask, shape)
+            main(cells, D, target_mask, shape, move_params)
     except Exception as e:
         print(f"Failed: {e}")
