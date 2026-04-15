@@ -41,7 +41,7 @@ TABLE_GRID     = (70, 70, 70)
 
 
 # ================== Gemini ==================
-client = genai.Client(api_key="AIzaSyCFOELT8QDnnbaUYledJMZLJ2ZCtFzTHfg")
+client = genai.Client(api_key="AIzaSyBVK0w9mb8KY-nZBJ5c33BcpxklctZg3UA")
 
 _OPPOSITE_EDGE = {
     "right":    "left",
